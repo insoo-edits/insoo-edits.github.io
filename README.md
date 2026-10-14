@@ -25,7 +25,7 @@ python3 -m http.server 8000
 ```
 assets/
   profile.jpg
-  works/      video-01.mp4, video-02.mp4 (+ poster), thumbnail-01~04.jpg
+  works/      video-01.mp4, video-02.mp4, shorts-01.mp4, shorts-02.mp4 (+ poster), thumbnail-01~04.jpg
   process/    process-original.mp4, process-timeline.mp4 (+ poster)
 ```
 

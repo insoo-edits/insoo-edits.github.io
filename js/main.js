@@ -4,10 +4,10 @@
 
   document.getElementById('app').innerHTML = [
     Intro(site),
+    About(site),
     Works(site),
     Services(site),
     Process(site),
-    About(site),
     Contact(site),
   ].join('');
 

@@ -2,10 +2,11 @@
   const esc = (s) =>
     String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  function Panel(inner, { id = '', cls = '', label = '', fit = '', vr = '' } = {}) {
+  function Panel(inner, { id = '', cls = '', label = '', fit = '', vr = '', nav = '', group = '' } = {}) {
     const style = [fit && `--fit-h:${fit}`, vr && `--vr:${esc(vr)}`].filter(Boolean).join(';');
     return `
       <section class="panel ${cls}" ${id ? `id="${id}"` : ''} ${label ? `aria-label="${esc(label)}"` : ''}
+               data-nav="${esc(nav || label)}" data-group="${esc(group || id || nav || label)}"
                ${style ? `style="${style}"` : ''}>
         <div class="wrap panel-inner">${inner}</div>
       </section>`;
@@ -27,8 +28,19 @@
           disablepictureinpicture disableremoteplayback
           tabindex="0"
           aria-label="${esc(v.title)}"></video>
+        ${v.sound ? SoundButton() : ''}
       </div>`;
   }
+
+  function SoundButton() {
+    return `
+      <button type="button" class="sound" aria-label="소리 켜기" aria-pressed="false">
+        <svg class="sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        <svg class="sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5h3.2L12 5.5v13l-4.8-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>`;
+  }
+
+  const lines = (text) => String(text).split(/(?<=[.!?])\s+/).map(esc).join('<br>');
 
   function Image(img, { eager = false, alt = '' } = {}) {
     return `
@@ -61,40 +73,52 @@
           <p class="intro-thanks" data-intro="2">${esc(i.thanks)}</p>
         </div>
       </div>`,
-      { id: 'top', cls: 'panel-intro', label: '소개' }
+      { id: 'top', cls: 'panel-intro', label: '인사', nav: '처음' }
     );
   }
 
   function Works(site) {
-    const { videos, thumbnails } = site.works;
+    const { videos, thumbnails, shorts = [] } = site.works;
     const videoItems = videos.map((v) => `<figure class="work">${Video(v)}${Caption(v)}</figure>`).join('');
     const thumbItems = thumbnails
       .map((t) => `<figure class="work thumb">${Image(t)}${Caption(t)}</figure>`)
       .join('');
     const grid = thumbnails.length > 2;
+    const shortItems = shorts.map((v) => `<figure class="work">${Video(v)}${Caption(v)}</figure>`).join('');
 
     return (
       Panel(
         `${SectionHead(site, 'works')}
          <h3 class="subhead">영상</h3>
          <div class="works-row">${videoItems}</div>`,
-        { id: 'works', fit: '50vh' }
+        { id: 'works', fit: '50vh', nav: '작업물 · 영상', group: 'works' }
       ) +
+      (shorts.length
+        ? Panel(
+            `<div class="shorts">
+               <h3 class="subhead">쇼츠</h3>
+               <div class="shorts-row">${shortItems}</div>
+             </div>`,
+            { cls: 'panel-shorts', label: '쇼츠', nav: '작업물 · 쇼츠', group: 'works' }
+          )
+        : '') +
       Panel(
         `<div class="works-grid ${grid ? 'is-grid' : ''}">
            <h3 class="subhead">썸네일</h3>
            <div class="works-row">${thumbItems}</div>
          </div>`,
-        { cls: 'panel-thumbs', label: '썸네일', fit: grid ? 'var(--thumb-h)' : '56vh' }
+        { cls: 'panel-thumbs', label: '썸네일', fit: grid ? 'var(--thumb-h)' : '56vh', nav: '작업물 · 썸네일', group: 'works' }
       )
     );
   }
 
   function Services(site) {
     const rows = site.services
-      .map((s) => `<li class="service"><h3>${esc(s.title)}</h3><p>${esc(s.desc)}</p></li>`)
+      .map((s) => {
+        return `<li class="service"><h3>${esc(s.title)}</h3><p>${lines(s.desc)}</p></li>`;
+      })
       .join('');
-    return Panel(`${SectionHead(site, 'services')}<ul class="services">${rows}</ul>`, { id: 'what-i-do', cls: 'panel-services' });
+    return Panel(`${SectionHead(site, 'services')}<ul class="services">${rows}</ul>`, { id: 'what-i-do', cls: 'panel-services', nav: site.sections.services.title });
   }
 
   function Step(no, step, extra = '') {
@@ -127,14 +151,16 @@
         `${SectionHead(site, 'process')}
          ${p.lead ? `<p class="process-lead">${esc(p.lead)}</p>` : ''}
          ${Step('01', p.original)}`,
-        { id: 'how-i-edit', cls: 'panel-process', vr: p.original.ratio }
+        { id: 'how-i-edit', cls: 'panel-process', vr: p.original.ratio, nav: `${site.sections.process.title} · ${p.original.title}`, group: 'process' }
       ) +
       Panel(Step('02', p.timeline, notes ? `<ul class="notes">${notes}</ul>` : ''), {
         cls: 'panel-process',
         label: p.timeline.title,
         vr: p.timeline.ratio,
+        nav: `${site.sections.process.title} · ${p.timeline.title}`,
+        group: 'process',
       }) +
-      Panel(Step('03', p.final), { cls: 'panel-process', label: p.final.title, vr: p.final.ratio })
+      Panel(Step('03', p.final), { cls: 'panel-process', label: p.final.title, vr: p.final.ratio, nav: `${site.sections.process.title} · ${p.final.title}`, group: 'process' })
     );
   }
 
@@ -147,9 +173,9 @@
            <span class="label">사용 툴</span>
            <ul>${a.tools.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>
          </div>
-         <div class="about-text">${a.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('')}</div>
+         <div class="about-text">${a.paragraphs.map((p) => `<p>${lines(p)}</p>`).join('')}</div>
        </div>`,
-      { id: 'about' }
+      { id: 'about', cls: 'panel-about', nav: site.sections.about.title }
     );
   }
 
@@ -186,7 +212,7 @@
            <span>${esc(site.footer)}</span>
            <a href="#top" data-go="0">처음으로</a>
          </footer>`,
-        { id: 'contact', cls: 'panel-contact' }
+        { id: 'contact', cls: 'panel-contact', nav: site.sections.contact.title }
       ) +
       `<div class="toast" role="status" aria-live="polite" data-msg="${esc(c.copied || '복사되었습니다.')}"></div>`
     );

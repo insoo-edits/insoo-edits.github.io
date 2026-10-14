@@ -3,6 +3,7 @@
   const P = M.pager;
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const INTRO_KEY = 'kis-intro-seen';
+  let introHold = 0;
 
   function applyVars() {
     const s = document.documentElement.style;
@@ -17,9 +18,8 @@
     s.setProperty('--page-distance', P.distance + 'px');
   }
 
-
   function seenRecently() {
-    if (/[?&]intro\b/.test(location.search)) return false; // ?intro 로 강제 재생
+    if (/[?&]intro\b/.test(location.search)) return false;
     if (!M.intro.revisitHours) return false;
     try {
       const t = Number(localStorage.getItem(INTRO_KEY));
@@ -47,9 +47,10 @@
 
     let finished = false;
     const events = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
-    const finish = () => {
+    const finish = (e) => {
       if (finished) return;
       finished = true;
+      if (e && e.type) introHold = performance.now() + 700;
       items.forEach((el) => {
         if (!el.classList.contains('is-in')) {
           el.style.transitionDelay = '0ms';
@@ -74,7 +75,6 @@
       })
     );
   }
-
 
   function markMissing(media) {
     if (!media || media.classList.contains('is-missing')) return;
@@ -102,6 +102,31 @@
     });
   }
 
+  const Sound = {
+    set(v, on) {
+      v.muted = !on;
+      const b = v.parentElement.querySelector('.sound');
+      if (!b) return;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.setAttribute('aria-label', on ? '소리 끄기' : '소리 켜기');
+    },
+    muteAll(except) {
+      document.querySelectorAll('video[data-src]').forEach((v) => { if (v !== except && !v.muted) Sound.set(v, false); });
+    },
+    setup() {
+      document.querySelectorAll('.media .sound').forEach((b) => {
+        const v = b.parentElement.querySelector('video');
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const on = v.muted;
+          Sound.muteAll(v);
+          Sound.set(v, on);
+          if (on && v.paused) { v.dataset.userPaused = ''; Video.play(v); }
+        });
+      });
+    },
+  };
 
   const Video = {
     load(v) {
@@ -172,6 +197,7 @@
     timer: 0,
     sync(panels, index, delay = 0) {
       clearTimeout(Video.timer);
+      Sound.muteAll();
       const toPlay = [];
       panels.forEach((panel, i) => {
         panel.querySelectorAll('video[data-src]').forEach((v) => {
@@ -191,7 +217,6 @@
     },
   };
 
-
   function pager() {
     const panels = [...document.querySelectorAll('.panel')];
     if (!panels.length) return;
@@ -204,12 +229,38 @@
 
     panels.forEach((p, i) => { p.classList.toggle('is-active', i === 0); p.classList.toggle('is-settled', i === 0); });
 
-    const pad = (n) => String(n).padStart(2, '0');
-    const counter = document.createElement('div');
-    counter.className = 'page-count';
-    counter.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(counter);
-    const count = () => { counter.innerHTML = `<b>${pad(index + 1)}</b> / ${pad(panels.length)}`; };
+    const nav = document.createElement('nav');
+    nav.className = 'pager-nav';
+    nav.setAttribute('aria-label', '페이지 이동');
+    const dots = panels.map((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pager-dot';
+      if (i > 0 && p.dataset.group !== panels[i - 1].dataset.group) b.classList.add('is-gap');
+      b.innerHTML = '<span class="pager-label"></span><span class="pager-bar"></span>';
+      b.firstChild.textContent = p.dataset.nav || '';
+      b.setAttribute('aria-label', p.dataset.nav || `${i + 1}`);
+      b.addEventListener('click', () => go(i));
+      nav.appendChild(b);
+      return b;
+    });
+    document.body.appendChild(nav);
+
+    const next = document.createElement('button');
+    next.type = 'button';
+    next.className = 'pager-next';
+    next.setAttribute('aria-label', '다음 페이지');
+    next.addEventListener('click', () => go(index + 1));
+    document.body.appendChild(next);
+
+    const count = () => {
+      dots.forEach((b, i) => {
+        b.classList.toggle('is-current', i === index);
+        if (i === index) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      next.classList.toggle('is-hidden', index === panels.length - 1);
+    };
     count();
     document.documentElement.classList.add('is-paged');
     Video.sync(panels, 0);
@@ -258,6 +309,7 @@
         const now = performance.now();
         if (now - lastWheel > P.gestureGap) { gestureUsed = false; acc = 0; }
         lastWheel = now;
+        if (now < introHold) { e.preventDefault(); gestureUsed = true; return; }
 
         const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
         if (!dy) return;
@@ -301,12 +353,17 @@
       if (touchY == null) return;
       const dy = touchY - e.changedTouches[0].clientY;
       touchY = null;
+      if (performance.now() < introHold) return;
       if (touchScrolled || Math.abs(dy) < P.swipe) return;
       go(index + (dy > 0 ? 1 : -1));
     });
 
     window.addEventListener('keydown', (e) => {
       if (e.target.closest('input, textarea, select')) return;
+      if (performance.now() < introHold && ['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End'].includes(e.key)) {
+        e.preventDefault();
+        return;
+      }
       const panel = panels[index];
       const down = ['ArrowDown', 'PageDown', ' '].includes(e.key) && !e.shiftKey;
       const up = ['ArrowUp', 'PageUp'].includes(e.key) || (e.key === ' ' && e.shiftKey);
@@ -338,7 +395,6 @@
       }
     });
   }
-
 
   function copyText(text) {
     if (navigator.clipboard && window.isSecureContext) {
@@ -384,6 +440,7 @@
       applyVars();
       images();
       Video.setup();
+      Sound.setup();
       intro();
       pager();
       copy();
